@@ -172,6 +172,66 @@ def status() -> None:
     click.echo(f"  Config:   {config.CONFIG_FILE}")
 
 
+@cli.command(help="Re-advertise supported models after pulling/removing GGUF files")
+def refresh() -> None:
+    if not config.is_logged_in():
+        click.echo("✗ Not logged in. Run `trd-worker login` first.", err=True)
+        sys.exit(1)
+
+    cfg = config.load()
+    token = cfg.get("auth_token")
+    if not token:
+        click.echo("✗ No token in config.", err=True)
+        sys.exit(1)
+
+    # Recompute supported set: VRAM-tier ∩ locally-downloaded
+    from . import models as model_mod
+    info = gpu.detect()
+    if not info:
+        click.echo("✗ Could not detect GPU.", err=True)
+        sys.exit(1)
+    suggested = gpu.suggest_supported_models(info)
+    local_names = {m.name for m in model_mod.list_local()}
+    supported: list[str] = []
+    seen: set[str] = set()
+    for name in suggested:
+        spec = model_mod._by_name(name)
+        if spec and spec.name in local_names and spec.name not in seen:
+            supported.append(spec.name)
+            seen.add(spec.name)
+
+    click.echo(f"Current GPU:  {info.vendor} {info.model} ({info.vram_gb}GB)")
+    click.echo(f"Will advertise: {', '.join(supported) if supported else '(none — no models downloaded)'}")
+
+    if not supported:
+        click.echo(
+            "\n⚠ No downloaded models match this GPU's tier. "
+            "The worker will register but never receive jobs.",
+            err=True,
+        )
+        if not click.confirm("Submit empty list anyway?", default=False):
+            click.echo("Aborted.")
+            return
+
+    try:
+        accepted = api.update_capabilities(token, supported)
+    except api.ApiError as e:
+        if e.status in (401, 403):
+            click.echo(
+                "✗ Auth rejected. Token may be revoked. "
+                "Run `trd-worker login` to register fresh.",
+                err=True,
+            )
+        else:
+            click.echo(f"✗ Update failed: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"✗ Network error: {e}", err=True)
+        sys.exit(1)
+
+    click.echo(f"\n✓ Updated. Server now advertises: {', '.join(accepted) if accepted else '(empty)'}")
+
+
 @cli.command(help="Wipe local config and optionally revoke token on the server")
 @click.option(
     "--revoke/--no-revoke",

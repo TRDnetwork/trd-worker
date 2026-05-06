@@ -188,3 +188,19 @@ def revoke(token: str, timeout: int = 10) -> None:
     r = requests.post(url, headers=_headers(token), timeout=timeout)
     _check(r)
 
+
+def update_capabilities(
+    token: str,
+    supported_models: list[str],
+    timeout: int = 10,
+) -> list[str]:
+    """
+    Update the worker's advertised supported_models without re-registering.
+    Returns the list as the server stored it (after filtering).
+    """
+    url = f"{config.api_base()}/api/compute/workers/update-capabilities"
+    payload = {"supported_models": supported_models}
+    r = requests.post(url, json=payload, headers=_headers(token), timeout=timeout)
+    body = _check(r)
+    return list(body.get("supported_models") or [])
+
