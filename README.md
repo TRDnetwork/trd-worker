@@ -4,9 +4,16 @@ Community GPU worker for the TRD Compute Network. Plug in your idle GPU, run TRD
 
 > **Phase 2 — alpha.** Inference is currently STUBBED (workers sleep + return canned responses). Real inference ships in Phase 3 once we wire in llama.cpp / vllm.
 
-## Install (dev)
+## Install
 
 ```bash
+pip install git+https://github.com/TRDnetwork/trd-worker.git
+```
+
+Or for development (clone + editable install):
+
+```bash
+git clone https://github.com/TRDnetwork/trd-worker.git
 cd trd-worker
 pip install -e .
 ```
