@@ -86,9 +86,9 @@ class Daemon:
         # Mark busy via heartbeat (best-effort, don't fail if it errors)
         self._send_heartbeat(token, "busy", 75)
 
-        # Execute (stub for Phase 2)
+        # Execute (real inference in Phase 3, or stub if TRD_WORKER_USE_STUB=1)
         try:
-            result, duration_ms, tokens = runner.run_job_stub(
+            result, duration_ms, tokens = runner.run(
                 job.prompt, job.model_name, job.max_tokens, job.timeout_sec
             )
         except Exception as e:

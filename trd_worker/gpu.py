@@ -191,21 +191,29 @@ def _detect_amd() -> Optional[GpuInfo]:
 # ── helpers ─────────────────────────────────────────────────────────────────
 def suggest_supported_models(info: GpuInfo) -> list[str]:
     """
-    Given a GPU's VRAM, suggest which models it can plausibly run.
-    These are placeholder names matching what TRD will route in Phase 7.
+    Given a GPU's VRAM, suggest which models the worker could plausibly run.
+    The actual advertised set is the intersection of this and what's
+    downloaded locally (see cli.py login command).
+
+    These names should match entries in trd_worker/models.py registry. Any
+    not-yet-supported names listed here are forward-looking placeholders
+    for Phase 3+ — they're harmless because the cli intersection drops them.
     """
     vram = info.vram_gb
     models: list[str] = []
     if vram >= 80:
-        models = ["qwen3-235b", "llama3-70b", "deepseek-67b", "mixtral-8x22b"]
+        models = ["qwen3-235b", "llama3-70b", "deepseek-67b", "mixtral-8x22b",
+                  "qwen2.5-7b-instruct"]
     elif vram >= 40:
-        models = ["llama3-70b", "deepseek-67b", "mixtral-8x22b", "qwen2-32b"]
+        models = ["llama3-70b", "deepseek-67b", "mixtral-8x22b", "qwen2-32b",
+                  "qwen2.5-7b-instruct"]
     elif vram >= 24:
-        models = ["qwen2-32b", "llama3-13b", "mistral-7b", "phi-3-medium"]
+        models = ["qwen2-32b", "qwen2.5-7b-instruct", "llama3-13b",
+                  "mistral-7b", "phi-3-medium"]
     elif vram >= 16:
-        models = ["llama3-13b", "mistral-7b", "phi-3-medium"]
+        models = ["qwen2.5-7b-instruct", "llama3-13b", "mistral-7b", "phi-3-medium"]
     elif vram >= 8:
-        models = ["mistral-7b", "phi-3-medium", "phi-3-mini"]
+        models = ["qwen2.5-7b-instruct", "mistral-7b", "phi-3-medium", "phi-3-mini"]
     else:
         models = ["phi-3-mini"]
     return models

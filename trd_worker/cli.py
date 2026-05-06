@@ -56,8 +56,44 @@ def login(email: str, hostname: str | None, api_base: str | None) -> None:
     if info.cuda_version:
         click.echo(f"   CUDA:    {info.cuda_version}")
 
-    supported = gpu.suggest_supported_models(info)
-    click.echo(f"   Models:  {', '.join(supported)}")
+    # Models the worker should advertise = intersection of (VRAM-tier suggestion)
+    # and (actually downloaded GGUF files). Phase 3+: workers only claim jobs
+    # for models they can actually execute.
+    from . import models as model_mod
+    suggested = gpu.suggest_supported_models(info)
+    local_names = {m.name for m in model_mod.list_local()}
+    # Match suggested names + their aliases against the local registry
+    supported: list[str] = []
+    for name in suggested:
+        spec = model_mod._by_name(name)
+        if spec and spec.name in local_names:
+            supported.append(spec.name)
+    # De-dupe while preserving order
+    seen: set[str] = set()
+    supported = [s for s in supported if not (s in seen or seen.add(s))]
+
+    if supported:
+        click.echo(f"   Models:  {', '.join(supported)}")
+    else:
+        click.echo("   Models:  (none downloaded)", err=False)
+        click.echo(
+            "\n⚠ No supported models are downloaded yet. The worker would register "
+            "but never receive jobs.",
+            err=True,
+        )
+        click.echo(
+            "  Run `trd-worker models list` to see what's available, then "
+            "`trd-worker models pull <name>` to download.",
+            err=True,
+        )
+        click.echo(
+            "  (You can also re-run `trd-worker login` after downloading models "
+            "to register the updated capability set.)",
+            err=True,
+        )
+        if not click.confirm("\nRegister anyway?", default=False):
+            click.echo("Aborted.")
+            return
 
     if not hostname:
         hostname = socket.gethostname() or "unknown-host"
@@ -177,6 +213,88 @@ def logout(revoke: bool | None) -> None:
 @cli.command(help="Print version")
 def version() -> None:
     click.echo(__version__)
+
+
+# ── trd-worker models ───────────────────────────────────────────────────────
+@cli.group(help="Manage local model files (GGUF)")
+def models() -> None:
+    pass
+
+
+@models.command("list", help="Show available + locally-downloaded models")
+def models_list() -> None:
+    from . import models as model_mod
+    available = model_mod.list_available()
+    if not available:
+        click.echo("No models in registry.")
+        return
+    click.echo(f"{'NAME':<28}  {'SIZE':>7}  {'VRAM':>6}  {'STATUS':<12}  DESCRIPTION")
+    click.echo("─" * 88)
+    for spec in available:
+        local = "✓ downloaded" if model_mod.is_downloaded(spec.name) else "  not pulled"
+        click.echo(
+            f"{spec.name:<28}  "
+            f"{spec.file_size_gb:>5.1f}GB  "
+            f"{spec.min_vram_gb:>4}GB  "
+            f"{local:<12}  "
+            f"{spec.display_name}"
+        )
+
+
+@models.command("pull", help="Download a model GGUF to ~/.trd-worker/models/")
+@click.argument("name")
+@click.option("--force", is_flag=True, help="Re-download even if cached")
+def models_pull(name: str, force: bool) -> None:
+    from . import models as model_mod
+    spec = model_mod._by_name(name)
+    if not spec:
+        click.echo(f"✗ Unknown model '{name}'.", err=True)
+        click.echo("Available:")
+        for m in model_mod.list_available():
+            click.echo(f"  {m.name}")
+        raise SystemExit(1)
+
+    if model_mod.is_downloaded(spec.name) and not force:
+        path = model_mod.model_path(spec.name)
+        click.echo(f"✓ Already downloaded: {path}")
+        click.echo("  (Use --force to re-download)")
+        return
+
+    try:
+        path = model_mod.download_model(spec.name, progress=True, force=force)
+        click.echo(f"\n✓ Ready: {path}")
+    except Exception as e:
+        click.echo(f"\n✗ Download failed: {e}", err=True)
+        raise SystemExit(1)
+
+
+@models.command("where", help="Print the local cache directory")
+def models_where() -> None:
+    from . import models as model_mod
+    click.echo(str(model_mod.MODELS_DIR))
+
+
+@models.command("rm", help="Delete a downloaded model from disk")
+@click.argument("name")
+def models_rm(name: str) -> None:
+    from . import models as model_mod
+    spec = model_mod._by_name(name)
+    if not spec:
+        click.echo(f"✗ Unknown model '{name}'.", err=True)
+        raise SystemExit(1)
+    if not model_mod.is_downloaded(spec.name):
+        click.echo(f"Not downloaded: {spec.name}")
+        return
+    path = model_mod.model_path(spec.name)
+    if not click.confirm(f"Delete {path}?"):
+        return
+    path.unlink()
+    # Also remove parent dir if empty
+    try:
+        path.parent.rmdir()
+    except OSError:
+        pass
+    click.echo(f"✓ Deleted {path}")
 
 
 if __name__ == "__main__":
