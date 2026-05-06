@@ -44,10 +44,41 @@ class InferenceTimeoutError(InferenceError):
 # Phase 3 ships a single generic system prompt. Phase 7 (router integration)
 # will pass per-agent system prompts through compute_jobs.metadata.
 _DEFAULT_SYSTEM = (
-    "You are a senior frontend engineer. Generate clean, modern HTML/CSS for "
-    "the user's request. Output only the HTML. No commentary, no markdown "
-    "code fences, no explanations."
+    "You are a senior frontend engineer. Generate clean, modern HTML/CSS "
+    "for the user's request.\n\n"
+    "STRICT OUTPUT RULES:\n"
+    "1. Output the raw HTML directly. Start your response with `<` and end "
+    "with `>` of the closing tag.\n"
+    "2. DO NOT wrap output in markdown code fences (```html, ```, etc).\n"
+    "3. DO NOT add commentary, explanations, or text before/after the HTML.\n"
+    "4. DO NOT use placeholder content like Lorem Ipsum unless explicitly requested."
 )
+
+
+def _strip_markdown_fences(text: str) -> str:
+    """
+    Belt-and-suspenders cleanup: even with strict system prompt, LLMs sometimes
+    wrap output in ```html ... ``` fences. Strip them post-hoc.
+    """
+    text = text.strip()
+    if not text.startswith("```"):
+        return text
+
+    # Drop the first line (```html or ```)
+    if "\n" in text:
+        first_newline = text.index("\n")
+        text = text[first_newline + 1 :]
+    else:
+        # Single-line response that opens with ```; weird but handle it
+        text = text[3:]
+        if text.startswith(("html", "HTML")):
+            text = text[4:].lstrip("\n")
+
+    # Drop trailing fence
+    if text.rstrip().endswith("```"):
+        text = text.rstrip()[:-3].rstrip()
+
+    return text.strip()
 
 
 # ── main entry point ────────────────────────────────────────────────────────
@@ -135,6 +166,11 @@ def run_job(
 
     if not text:
         raise InferenceError("Model returned empty output")
+
+    # Strip markdown code fences if model added them despite system prompt
+    text = _strip_markdown_fences(text)
+    if not text:
+        raise InferenceError("Model output was only markdown fences (empty after strip)")
 
     duration_ms = int((time.monotonic() - start) * 1000)
     return text, duration_ms, tokens
