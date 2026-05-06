@@ -93,7 +93,20 @@ class Daemon:
             )
         except Exception as e:
             self._log(f"⚠ Job execution failed: {e}")
-            # Phase 3: report failure to backend. For now just don't submit.
+            # Report failure to backend so it can requeue or mark failed
+            try:
+                fr = api.fail_job(token, job.job_id, str(e))
+                if fr.requeued:
+                    self._log(f"   → requeued for retry (attempt {fr.retry_count})")
+                else:
+                    self._log(f"   → marked failed (max retries exhausted)")
+            except api.ApiError as fe:
+                if fe.status == 410:
+                    self._log(f"   (job already cleared, no fail-report needed)")
+                else:
+                    self._log(f"   ⚠ fail-report rejected: {fe}")
+            except requests.RequestException as fe:
+                self._log(f"   ⚠ fail-report network error: {fe}")
             return True
 
         # Submit

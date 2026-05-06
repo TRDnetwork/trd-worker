@@ -157,3 +157,34 @@ def submit_job(
         credits_awarded=body["credits_awarded"],
         total_credits_balance=body["total_credits_balance"],
     )
+
+
+@dataclass
+class FailResult:
+    requeued: bool
+    retry_count: int
+
+
+def fail_job(
+    token: str,
+    job_id: str,
+    error_message: str,
+    timeout: int = 10,
+) -> FailResult:
+    """Report job execution failure to backend. Server requeues or marks failed."""
+    url = f"{config.api_base()}/api/compute/jobs/fail"
+    payload = {"job_id": job_id, "error_message": error_message[:1000]}
+    r = requests.post(url, json=payload, headers=_headers(token), timeout=timeout)
+    body = _check(r)
+    return FailResult(
+        requeued=body["requeued"],
+        retry_count=body["retry_count"],
+    )
+
+
+def revoke(token: str, timeout: int = 10) -> None:
+    """Revoke this worker's token server-side. Token is dead after this call."""
+    url = f"{config.api_base()}/api/compute/workers/revoke"
+    r = requests.post(url, headers=_headers(token), timeout=timeout)
+    _check(r)
+

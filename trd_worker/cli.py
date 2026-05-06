@@ -136,12 +136,39 @@ def status() -> None:
     click.echo(f"  Config:   {config.CONFIG_FILE}")
 
 
-@cli.command(help="Wipe local config (note: does NOT unregister with backend)")
-def logout() -> None:
+@cli.command(help="Wipe local config and optionally revoke token on the server")
+@click.option(
+    "--revoke/--no-revoke",
+    default=None,
+    help="Also revoke token server-side (default: prompt)",
+)
+def logout(revoke: bool | None) -> None:
     if not config.is_logged_in():
         click.echo("Not logged in.")
         return
-    if not click.confirm("Wipe saved token? You'll need to log in again."):
+
+    cfg = config.load()
+    token = cfg.get("auth_token")
+
+    if revoke is None:
+        revoke = click.confirm(
+            "Also revoke this token on the server? (recommended if you suspect leak)",
+            default=True,
+        )
+
+    if revoke and token:
+        try:
+            api.revoke(token)
+            click.echo("✓ Token revoked server-side.")
+        except api.ApiError as e:
+            if e.status in (401, 403):
+                click.echo("(Token was already invalid/banned — nothing to revoke.)")
+            else:
+                click.echo(f"⚠ Server revoke failed: {e}", err=True)
+        except Exception as e:
+            click.echo(f"⚠ Server revoke network error: {e}", err=True)
+
+    if not click.confirm("Wipe local config?", default=True):
         return
     config.clear()
     click.echo("✓ Local config cleared.")
