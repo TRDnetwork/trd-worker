@@ -26,7 +26,7 @@ def cli() -> None:
 
 
 @cli.command(help="Register this machine with TRD Compute Network")
-@click.option("--email", prompt="Waitlist email", help="Email used for the compute.trdn.io waitlist")
+@click.option("--email", prompt="Email", help="Email used for compute.trdn.io")
 @click.option("--hostname", default=None, help="Custom worker name (defaults to system hostname)")
 @click.option(
     "--api-base",
