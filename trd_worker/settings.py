@@ -109,10 +109,15 @@ def maybe_refresh(token: str, daemon_version: str) -> bool:
 
     On first successful fetch, also POSTs an ack with daemon_version so
     the UI can show which version is active.
+
+    First call always runs (regardless of timer) so the daemon picks up
+    settings + acks version immediately on startup.
     """
     global _cache, _last_fetch_attempt, _first_fetch_done
     now = time.monotonic()
-    if now - _last_fetch_attempt < SETTINGS_REFRESH_SEC:
+    # First call always runs (last_fetch_attempt == 0.0). Subsequent calls
+    # only run if SETTINGS_REFRESH_SEC has elapsed.
+    if _last_fetch_attempt > 0.0 and now - _last_fetch_attempt < SETTINGS_REFRESH_SEC:
         return False
     _last_fetch_attempt = now
 
