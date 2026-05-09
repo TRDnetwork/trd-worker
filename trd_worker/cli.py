@@ -270,6 +270,50 @@ def logout(revoke: bool | None) -> None:
     click.echo("✓ Local config cleared.")
 
 
+@cli.command(help="Show effective worker settings (fetched from backend) — useful for debugging why a worker is paused")
+def settings() -> None:
+    if not config.is_logged_in():
+        click.echo("✗ Not logged in. Run `trd-worker login` first.", err=True)
+        sys.exit(1)
+
+    cfg = config.load()
+    token = cfg.get("auth_token")
+    if not token:
+        click.echo("✗ No token in config.", err=True)
+        sys.exit(1)
+
+    from . import settings as settings_mod, power as power_mod
+    settings_mod.maybe_refresh(token, __version__)
+    s = settings_mod.get()
+
+    click.echo("Worker settings (effective):")
+    click.echo(f"  Max GPU util:     {s.max_gpu_utilization_pct}%")
+    click.echo(f"  Schedule:         " + (
+        f"{s.schedule_start_hour:02d}:00–{s.schedule_end_hour:02d}:00 (local time)"
+        if s.schedule_enabled and s.schedule_start_hour is not None and s.schedule_end_hour is not None
+        else "disabled (always on)"
+    ))
+    click.echo(f"  Allowed models:   " + (
+        ", ".join(s.allowed_models) if s.allowed_models else "(all supported)"
+    ))
+    click.echo(f"  Pause on battery: {'yes' if s.pause_when_on_battery else 'no'}")
+    click.echo("")
+
+    state = power_mod.is_on_battery()
+    power_label = (
+        "on battery" if state is True
+        else "on AC power" if state is False
+        else "indeterminate (no battery / desktop)"
+    )
+    click.echo(f"Current power state: {power_label}")
+
+    accept, reason = settings_mod.should_accept_jobs()
+    if accept:
+        click.echo("Status: ✅ would accept jobs right now")
+    else:
+        click.echo(f"Status: ⏸  paused — {reason}")
+
+
 @cli.command(help="Print version")
 def version() -> None:
     click.echo(__version__)

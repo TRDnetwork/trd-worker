@@ -16,7 +16,7 @@ from typing import Optional
 
 import requests
 
-from . import api, config, runner
+from . import __version__, api, config, runner, settings
 
 
 HEARTBEAT_SEC = 30
@@ -30,6 +30,9 @@ class Daemon:
         self.running = True
         self.last_heartbeat = 0.0
         self.consecutive_errors = 0
+        # Track the last "paused for X" reason so we don't spam logs every
+        # poll cycle when nothing has changed (e.g. on battery for an hour).
+        self._last_pause_reason: Optional[str] = None
 
     def _log(self, msg: str) -> None:
         if self.verbose:
@@ -157,6 +160,10 @@ class Daemon:
             if not self.running:
                 return 1
 
+        # Initial settings fetch (B, May 9 2026). Forces a refresh on start
+        # so the daemon picks up user prefs before claiming any job.
+        settings.maybe_refresh(token, __version__)
+
         self.last_heartbeat = time.monotonic()
         self._log("💓 Heartbeat ok — entering poll loop")
 
@@ -167,6 +174,27 @@ class Daemon:
             if now - self.last_heartbeat >= HEARTBEAT_SEC:
                 self._send_heartbeat(token, "idle", 0)
                 self.last_heartbeat = now
+
+            # Refresh settings periodically (no-op if SETTINGS_REFRESH_SEC
+            # hasn't elapsed; cheap when called every loop). __version__ is
+            # ack'd to the backend on first success so the UI shows
+            # "Settings active on worker vX.Y.Z".
+            settings.maybe_refresh(token, __version__)
+
+            # Check user-prefs gate BEFORE polling. If paused for any reason
+            # (on battery, outside schedule), skip and sleep. We log the
+            # reason once per change so the user can see WHY their worker
+            # is idle without log spam.
+            accept, reason = settings.should_accept_jobs()
+            if not accept:
+                if reason != self._last_pause_reason:
+                    self._log(f"⏸  Pausing — {reason}")
+                    self._last_pause_reason = reason
+                time.sleep(POLL_SEC)
+                continue
+            elif self._last_pause_reason is not None:
+                self._log("▶  Resuming — settings allow jobs again")
+                self._last_pause_reason = None
 
             # Try a job
             ran = self._try_run_job(token)
