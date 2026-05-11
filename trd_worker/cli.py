@@ -16,7 +16,7 @@ import sys
 
 import click
 
-from . import __version__, api, config, daemon, doctor, gpu
+from . import __version__, api, config, daemon, doctor as doctor_module, gpu
 
 
 @click.group(help="TRD Compute Network — community GPU worker")
@@ -402,20 +402,15 @@ def models_rm(name: str) -> None:
 
 
 
-@cli.command(help="Run end-to-end environment diagnostic (8 checks)")
+@cli.command("doctor", help="Run end-to-end environment diagnostic (8 checks)")
 @click.option("--json", "json_output", is_flag=True, help="Output JSON instead of human-readable")
-def doctor_cmd(json_output: bool) -> None:
-    """Wrap doctor.cmd_doctor in a click command."""
+def doctor(json_output: bool) -> None:
+    """Wrap doctor_module.cmd_doctor in a click command named 'doctor'."""
     class _Args:
         pass
     a = _Args()
     a.json = json_output
-    doctor.cmd_doctor(a)
-
-
-# Click's auto-generated subcommand name from a function `doctor_cmd` would be
-# `doctor-cmd`. Override to expose it as `trd-worker doctor`.
-doctor_cmd.name = "doctor"
+    doctor_module.cmd_doctor(a)
 
 
 if __name__ == "__main__":
