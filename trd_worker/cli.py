@@ -16,7 +16,7 @@ import sys
 
 import click
 
-from . import __version__, api, config, daemon, gpu
+from . import __version__, api, config, daemon, doctor, gpu
 
 
 @click.group(help="TRD Compute Network — community GPU worker")
@@ -399,6 +399,23 @@ def models_rm(name: str) -> None:
     except OSError:
         pass
     click.echo(f"✓ Deleted {path}")
+
+
+
+@cli.command(help="Run end-to-end environment diagnostic (8 checks)")
+@click.option("--json", "json_output", is_flag=True, help="Output JSON instead of human-readable")
+def doctor_cmd(json_output: bool) -> None:
+    """Wrap doctor.cmd_doctor in a click command."""
+    class _Args:
+        pass
+    a = _Args()
+    a.json = json_output
+    doctor.cmd_doctor(a)
+
+
+# Click's auto-generated subcommand name from a function `doctor_cmd` would be
+# `doctor-cmd`. Override to expose it as `trd-worker doctor`.
+doctor_cmd.name = "doctor"
 
 
 if __name__ == "__main__":

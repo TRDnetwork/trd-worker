@@ -140,6 +140,7 @@ def maybe_refresh(token: str, daemon_version: str) -> bool:
         return True
 
     _cache = WorkerSettings.from_dict(data)
+    _maybe_announce_update(data)
 
     # On first successful fetch, ack the daemon version so the UI can stop
     # showing the "settings not yet active" warning.
@@ -220,3 +221,59 @@ def is_model_allowed(model_name: str) -> bool:
     if s.allowed_models is None:  # no restriction
         return True
     return model_name in s.allowed_models
+
+
+# ── Auto-update notice handler (added in v0.2.1) ────────────────────────────
+_update_announced = False
+
+
+def _maybe_announce_update(settings_dict: dict) -> None:
+    """
+    Check /worker-settings response for an update_available block. Backend
+    injects this when LATEST_WORKER_VERSION > daemon_enforced_version. We
+    print a one-time banner to stderr so users see they should upgrade.
+
+    Optional auto-exit: set TRD_WORKER_AUTO_EXIT_ON_OUTDATED=1 to cause
+    the daemon to exit with code 2 when a warn-severity update is
+    available. Useful for systemd/launchd users who want auto-restart
+    after pip install -U trd-worker.
+    """
+    global _update_announced
+    notice = settings_dict.get("update_available")
+    if not notice or not notice.get("available"):
+        return
+    if _update_announced:
+        return
+
+    import sys
+    severity = notice.get("severity", "info")
+    cmd = notice.get("command", "pip install -U trd-worker")
+    latest = notice.get("latest_version", "?")
+    current = notice.get("current_version") or "unknown"
+
+    prefix = "WARN" if severity == "warn" else "INFO"
+    print(file=sys.stderr)
+    print(
+        f"[{prefix}] trd-worker update available: v{current} -> v{latest}",
+        file=sys.stderr,
+    )
+    print(f"       Upgrade with: {cmd}", file=sys.stderr)
+    if severity == "warn":
+        print(
+            "       (Your current version may not honor dashboard settings; "
+            "please upgrade soon.)",
+            file=sys.stderr,
+        )
+    print(file=sys.stderr)
+
+    _update_announced = True
+
+    import os
+    if severity == "warn" and os.environ.get("TRD_WORKER_AUTO_EXIT_ON_OUTDATED") == "1":
+        print(
+            "TRD_WORKER_AUTO_EXIT_ON_OUTDATED=1 -> exiting so supervisor "
+            "can restart on new version",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
